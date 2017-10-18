@@ -23,8 +23,8 @@ public:
 	BOOL Peek();
 	//读出子进程所有输出数据
 	std::string& Read(std::string &data);
-	//判断子进程是否存活
-	BOOL IsLive();
+	//判断子进程是否存活,nWait:等待时间(毫秒)
+	BOOL IsLive(DWORD dwWait = 0);
 private:
 	//定义句柄: 构成stdin管道的两端句柄  
 	HANDLE  m_hStdInR;         //子进程用的stdin的读入端  

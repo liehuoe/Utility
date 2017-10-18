@@ -31,10 +31,12 @@ BOOL Process::Create(LPSTR szCmd)
 	if (!DuplicateHandle(GetCurrentProcess(), m_hStdOutW, GetCurrentProcess(), &m_hStdErrW, 0, TRUE, DUPLICATE_SAME_ACCESS)) return FALSE;
 
 	STARTUPINFO siStartInfo = {0};
-	siStartInfo.cb = sizeof(STARTUPINFO);  
+	siStartInfo.cb = sizeof(STARTUPINFO);
+#if 1	/*注释下面三行就是普通的创建子进程*/
 	siStartInfo.dwFlags |= STARTF_USESHOWWINDOW;  
 	siStartInfo.dwFlags |= STARTF_USESTDHANDLES;  
-	siStartInfo.wShowWindow = SW_SHOW;
+	siStartInfo.wShowWindow = SW_HIDE;
+#endif
 	siStartInfo.hStdOutput = m_hStdOutW;
 	siStartInfo.hStdError =  m_hStdErrW;
 	siStartInfo.hStdInput = m_hStdInR;
@@ -94,8 +96,10 @@ std::string& Process::Read(std::string &data)
 	return data;
 }
 
-BOOL Process::IsLive()
+BOOL Process::IsLive(DWORD dwWait)
 {
+	if(dwWait != 0 && WaitForSingleObject(m_ProcInfo.hProcess, dwWait) == WAIT_OBJECT_0) return FALSE;
+
 	DWORD exitCode = 0;
 	GetExitCodeProcess(m_ProcInfo.hProcess, &exitCode);
 	return exitCode == STILL_ACTIVE;
