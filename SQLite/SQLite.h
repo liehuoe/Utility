@@ -5,11 +5,11 @@ author:     firehood
  
 purpose:    SQLite数据库操作类 
 *********************************************************************/  
-#pragma once   
-// #include <windows.h>   
-// #include "..\SQLite\sqlite3.h"    
-// #pragma comment(lib,"SQLite.lib")   
+#pragma once
+#include <windows.h> 
 #include <string>
+#include "./SQLite3/sqlite3.h"      
+// #pragma comment(lib,"./SQLite3/sqlite3.lib") 
   
 typedef BOOL (*QueryCallback) (void *para, int n_column, char **column_value, char **column_name);  
   

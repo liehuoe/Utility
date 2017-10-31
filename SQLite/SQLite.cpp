@@ -5,7 +5,6 @@ author:     firehood
  
 purpose:    SQLite数据库操作类 
 *********************************************************************/  
-#include "StdAfx.h"
 #include "SQLite.h" 
 
 using namespace std;
