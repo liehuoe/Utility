@@ -18,11 +18,15 @@ enum REQUEST_TYPE {REQUEST_TYPE_GET, REQUEST_TYPE_POST};
 class HttpClient
 {
 public:
-	~HttpClient() { Release(); }
+	HttpClient() { m_hSession = WinHttpOpen(NULL, WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0); }
+	~HttpClient() { Release(); if(m_hSession) WinHttpCloseHandle(m_hSession); }
 
+	//设置要发送请求的URL
 	BOOL SetRequest(LPCWSTR szURL, REQUEST_TYPE type = REQUEST_TYPE_GET);
+	//设置request头部
 	BOOL AddHeader(LPCWSTR szHeader);
-	BOOL Send(LPCSTR szPostData = NULL, int len = 0);
+	//发送request请求, szPostData,len:要附带的POST数据和长度,szPostData表示不附带数据,len=-1表示szPostData为NULL字节结尾的C字符串
+	BOOL Send(LPCSTR szPostData = NULL, int len = -1);
 	std::string Recv();
 private:
 	void Release();
