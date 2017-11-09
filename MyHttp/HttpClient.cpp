@@ -60,7 +60,10 @@ BOOL HttpClient::Send(LPCSTR szPostData, int len)
 	if(!szPostData || len == 0)
 		return WinHttpSendRequest(m_hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0, 0, 0, 0, 0);
 	else
+	{
+		if(len == 0) len = strlen(szPostData);
 		return WinHttpSendRequest(m_hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0, (LPVOID)szPostData, len, len, 0);
+	}
 }
 
 string HttpClient::Recv()
