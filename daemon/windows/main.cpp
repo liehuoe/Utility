@@ -27,7 +27,7 @@ char *szProcess[256];
 BOOL Init();
 void Release();
 HANDLE Exec(char *cmd);
-void Log(char* str, ...);
+void Log(const char* str, ...);
 
 void ServiceMain(int argc, char** argv);
 void ServiceStart();
@@ -42,37 +42,42 @@ int OnStatus();
 
 BOOL Init()
 {
-	/////////////////ÉèÖÃ¹¤×÷Ä¿Â¼/////////////////////
+	/////////////////è®¾ç½®å·¥ä½œç›®å½•/////////////////////
 	char dir[MAX_PATH];
     GetModuleFileName(NULL, dir, MAX_PATH);
 	*strrchr(dir, '\\') = '\0';
 	SetCurrentDirectory(dir);
-	/////////////////³õÊ¼»¯UI»·¾³/////////////////////
-	if(!WTSQueryUserToken(WTSGetActiveConsoleSessionId(), &hToken))
+	/////////////////åˆå§‹åŒ–UIç¯å¢ƒ/////////////////////
+    HANDLE hTok;
+    DWORD dwSessionId = WTSGetActiveConsoleSessionId();
+    if(!OpenProcessToken(GetCurrentProcess(), TOKEN_ALL_ACCESS, &hTok))
+    {
+        Log("%s OpenProcessToken is failed", __FUNCTION__);
+		return FALSE;
+    }
+    if(!DuplicateTokenEx(hTok, TOKEN_ALL_ACCESS, NULL, SecurityIdentification, TokenPrimary, &hToken))
+    {
+        Log("%s DuplicateTokenEx is failed", __FUNCTION__);
+		return FALSE;
+    }
+    if(!SetTokenInformation(hToken, TokenSessionId, &dwSessionId, sizeof(DWORD)))
+    {
+        Log("%s SetTokenInformation is failed", __FUNCTION__);
+		return FALSE;
+    }
+    //å¦‚æœä¸éœ€è¦ç®¡ç†å‘˜èº«ä»½è¿è¡Œ, åˆ™ä¸éœ€è¦ä¸Šé¢çš„æ­¥éª¤
+	if(!WTSQueryUserToken(dwSessionId, &hTok))
 	{
 		Log("%s WTSQueryUserToken is failed", __FUNCTION__);
 		return FALSE;
 	}
-	if(!ImpersonateLoggedOnUser(hToken))
-	{
-		Log("%s ImpersonateLoggedOnUser is failed", __FUNCTION__);
-		return FALSE;
-	}
-	//»ñÈ¡µ½µ±Ç°ÓÃ»§Â·¾¶
-	TCHAR szUsernamePath[MAX_PATH];
-	DWORD UsernamePathSize = ARRAYSIZE(szUsernamePath);
-	if (!GetUserProfileDirectory(hToken, szUsernamePath, &UsernamePathSize))
-	{
-		Log("%s GetUserProfileDirectory is failed", __FUNCTION__);
-		return FALSE;
-	}
-	//´´½¨»·¾³
-	if (!CreateEnvironmentBlock(&environment, hToken, FALSE))
+	//åˆ›å»ºç¯å¢ƒ
+	if (!CreateEnvironmentBlock(&environment, hTok, FALSE))
 	{
 		Log("could not create environment block (error: %i)", GetLastError());
 		return FALSE;
 	}
-	/////////////////ÅäÖÃÎÄ¼ş/////////////////////
+	/////////////////é…ç½®æ–‡ä»¶/////////////////////
 	FILE *fp;
 	errno_t err = fopen_s(&fp, "config", "r");
 	if(err != 0)
@@ -85,7 +90,7 @@ BOOL Init()
 	if(size <= 0) return FALSE;
 	char *p = szProcess[nProcessCount++] = (char*)malloc(size + 1);
 	rewind(fp);
-	//ÕÒÓĞĞ§¿ªÍ·
+	//æ‰¾æœ‰æ•ˆå¼€å¤´
 	int ch;
 	while((ch = fgetc(fp)) != EOF)
 	{
@@ -126,7 +131,7 @@ BOOL Init()
 	fclose(fp);
 	if(nProcessCount <= 0)
 	{
-		Log("ÕÒ²»µ½ÓĞĞ§ÅäÖÃ");
+		Log("æ‰¾ä¸åˆ°æœ‰æ•ˆé…ç½®");
 		return FALSE;
 	}
 
@@ -136,15 +141,13 @@ BOOL Init()
 void Release()
 {
 	ReportStatus(SERVICE_STOP_PENDING);
-	DestroyEnvironmentBlock(environment);
-	CloseHandle(hToken);
 }
 
 int main(int argc, char* argv[])
 {
     if(argc == 1)
 	{
-		SERVICE_TABLE_ENTRY ServiceTable[2] = {{ SERVICE_NAME, (LPSERVICE_MAIN_FUNCTION)ServiceMain }};
+		SERVICE_TABLE_ENTRY ServiceTable[2] = {{ (LPSTR)SERVICE_NAME, (LPSERVICE_MAIN_FUNCTION)ServiceMain }};
 		StartServiceCtrlDispatcher(ServiceTable);
 		return 0;
 	}
@@ -160,7 +163,7 @@ int main(int argc, char* argv[])
 	}
 }
 
-void Log(char* str, ...)
+void Log(const char* str, ...)
 {
     FILE* fp = NULL;
 	fopen_s(&fp, LOG_FILE, "a+");
@@ -187,9 +190,9 @@ void ReportStatus(DWORD state)
 {
 	dwCurrentStatus = state;
 	SERVICE_STATUS status = {
-		SERVICE_TYPE,										//·şÎñÀàĞÍ
-		state,												//µ±Ç°×´Ì¬
-		SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN		//¿É½ÓÊÜµÄ²Ù×÷
+		SERVICE_TYPE,										//æœåŠ¡ç±»å‹
+		state,												//å½“å‰çŠ¶æ€
+		SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN		//å¯æ¥å—çš„æ“ä½œ
 	};
 	SetServiceStatus(hStatus, &status);
 }
@@ -211,15 +214,15 @@ void ServiceMain(int argc, char** argv)
 
 void ServiceStart()
 {
-	byte setCount = 0;//µÈ´ıÊıÁ¿
-	byte *setIndex = (byte *)malloc(nProcessCount * sizeof(byte *));//µÈ´ıµÄ½ø³ÌÏÂ±ê
-	HANDLE *hSet = (HANDLE *)malloc(nProcessCount * sizeof(HANDLE *));//µÈ´ıµÄ¾ä±úÊı×é
-	byte failCount = 0;//³ö´íÊıÁ¿
-	byte *failIndex = (byte *)malloc(nProcessCount * sizeof(byte *));//³ö´íµÄ½ø³ÌÏÂ±ê
+	byte setCount = 0;//ç­‰å¾…æ•°é‡
+	byte *setIndex = (byte *)malloc(nProcessCount * sizeof(byte *));//ç­‰å¾…çš„è¿›ç¨‹ä¸‹æ ‡
+	HANDLE *hSet = (HANDLE *)malloc(nProcessCount * sizeof(HANDLE *));//ç­‰å¾…çš„å¥æŸ„æ•°ç»„
+	byte failCount = 0;//å‡ºé”™æ•°é‡
+	byte *failIndex = (byte *)malloc(nProcessCount * sizeof(byte *));//å‡ºé”™çš„è¿›ç¨‹ä¸‹æ ‡
 	for(int i = 0; i < nProcessCount; ++i) failIndex[failCount++] = i;
 	while(1)
 	{
-		//Æô¶¯³ö´í½ø³Ì
+		//å¯åŠ¨å‡ºé”™è¿›ç¨‹
 		byte count = failCount;
 		failCount = 0;
 		for(int i = 0; i < count; ++i)
@@ -236,13 +239,13 @@ void ServiceStart()
 				setIndex[setCount++] = failIndex[i];
 			}
 		}
-		//¼à¿Ø½ø³ÌÍË³ö
+		//ç›‘æ§è¿›ç¨‹é€€å‡º
 		DWORD ret = WaitForMultipleObjects(setCount, hSet, FALSE, 1000);
 		if(ret >= WAIT_OBJECT_0 && ret < WAIT_OBJECT_0 + setCount)
 		{
 			ret -= WAIT_OBJECT_0;
-			Log("½ø³Ì(%s)ÍË³ö", szProcess[setIndex[ret]]);
-			//ÕûÀíÊı¾İ
+			Log("è¿›ç¨‹(%s)é€€å‡º", szProcess[setIndex[ret]]);
+			//æ•´ç†æ•°æ®
 			CloseHandle(hSet[ret]);
 			failIndex[failCount++] = setIndex[ret];
 			for(int i = ret + 1; i < setCount; ++i)
@@ -254,11 +257,11 @@ void ServiceStart()
 		}
 		else if(ret != WAIT_TIMEOUT)
 		{
-			Log("WaitForMultipleObjects ³ö´í: %d", GetLastError());
+			Log("WaitForMultipleObjects å‡ºé”™: %d", GetLastError());
 		}
 		if(dwCurrentStatus != SERVICE_RUNNING)
 		{
-			//ÇåÀí½ø³Ì
+			//æ¸…ç†è¿›ç¨‹
 			for(int i = 0; i < setCount; ++i)
 			{
 				TerminateProcess(hSet[i], 0);
@@ -296,19 +299,19 @@ int OnInstall()
 	char filename[MAX_PATH];
     GetModuleFileName(NULL, filename, MAX_PATH);
     printf("Installing Service... ");
-    SC_HANDLE scv = CreateService(scm,//¾ä±ú
-		SERVICE_NAME,//·şÎñ¿ªÊ¼Ãû
-		SERVICE_DISPLAY_NAME,//ÏÔÊ¾·şÎñÃû
-		SERVICE_ALL_ACCESS, //·şÎñ·ÃÎÊÀàĞÍ
-		SERVICE_TYPE,//·şÎñÀàĞÍ
-		SERVICE_AUTO_START, //×Ô¶¯Æô¶¯·şÎñ
-		SERVICE_ERROR_IGNORE,//ºöÂÔ´íÎó
-		filename,//Æô¶¯µÄÎÄ¼şÃû
-		NULL,//name of load ordering group (ÔØÈë×éÃû)
-		NULL,//±êÇ©±êÊ¶·û
-		NULL,//Ïà¹ØĞÔÊı×éÃû
-		NULL,//ÕÊ»§(µ±Ç°)
-		NULL); //ÃÜÂë(µ±Ç°)
+    SC_HANDLE scv = CreateService(scm,//å¥æŸ„
+		SERVICE_NAME,//æœåŠ¡å¼€å§‹å
+		SERVICE_DISPLAY_NAME,//æ˜¾ç¤ºæœåŠ¡å
+		SERVICE_ALL_ACCESS, //æœåŠ¡è®¿é—®ç±»å‹
+		SERVICE_TYPE,//æœåŠ¡ç±»å‹
+		SERVICE_AUTO_START, //è‡ªåŠ¨å¯åŠ¨æœåŠ¡
+		SERVICE_ERROR_IGNORE,//å¿½ç•¥é”™è¯¯
+		filename,//å¯åŠ¨çš„æ–‡ä»¶å
+		NULL,//name of load ordering group (è½½å…¥ç»„å)
+		NULL,//æ ‡ç­¾æ ‡è¯†ç¬¦
+		NULL,//ç›¸å…³æ€§æ•°ç»„å
+		NULL,//å¸æˆ·(å½“å‰)
+		NULL); //å¯†ç (å½“å‰)
     if(scv == NULL)
     {
         code = GetLastError();
@@ -478,8 +481,10 @@ HANDLE Exec(char *cmd)
 {
 	PROCESS_INFORMATION pi;
 	STARTUPINFO         si = {0};
-	si.cb        = sizeof(STARTUPINFO);
-	si.lpDesktop = "winsta0\\default";
+	si.cb          = sizeof(STARTUPINFO);
+	si.lpDesktop   = (LPSTR)"winsta0\\default";
+    si.wShowWindow = SW_SHOW;
+    si.dwFlags     = STARTF_USESHOWWINDOW;
 	if(!CreateProcessAsUser(
 		hToken,
 		NULL,
@@ -487,14 +492,14 @@ HANDLE Exec(char *cmd)
 		NULL,
 		NULL,
 		FALSE,
-		NORMAL_PRIORITY_CLASS | CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
+		NORMAL_PRIORITY_CLASS | CREATE_UNICODE_ENVIRONMENT,
 		environment,
 		NULL,
 		&si,
 		&pi
 	) || pi.hProcess == INVALID_HANDLE_VALUE)
 	{
-		Log("(%s)Æô¶¯Ê§°Ü: %d", cmd, GetLastError());
+		Log("(%s)å¯åŠ¨å¤±è´¥: %d", cmd, GetLastError());
 		return NULL;
 	}
 	CloseHandle(pi.hThread);
